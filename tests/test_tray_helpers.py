@@ -48,8 +48,8 @@ class TestIconDigit(unittest.TestCase):
 class TestTooltip(unittest.TestCase):
     def test_formato_e_acao(self):
         tip = tooltip_text(79.3, 92.7, 12.4, "wait")
+        self.assertIn("mem 93%", tip)
         self.assertIn("commit 79%", tip)
-        self.assertIn("fís 93%", tip)
         self.assertIn("AGUARDAR", tip)
 
     def test_limite_127_chars(self):

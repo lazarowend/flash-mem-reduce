@@ -409,6 +409,19 @@ class TrayApp:
         self._added = False
         self._last_decision = None
         self._last_snapshot = None
+        # v0.2 — plano de limpeza (agendamento via menu, persistido em JSON)
+        self._schedule_path = "flashmem_schedule.json"
+        self.schedule_mode, self.schedule_value = th.schedule_load(self._schedule_path)
+        self.schedule_id = self._schedule_id_from_mode()
+        self.last_clean_ts: float = 0.0  # timestamp da última limpeza (plano+avaliador)
+        self._last_clean_text: str = ""   # 'Última limpeza: liberou X% da RAM'
+
+    def _schedule_id_from_mode(self) -> int:
+        """Deriva o id do menu (radio) a partir de (mode, value) carregados."""
+        for oid, mode, value, _label in th.SCHEDULE_OPTIONS:
+            if mode == self.schedule_mode and value == self.schedule_value:
+                return oid
+        return 300  # 'off' default
 
     # ------------------------------------------------------------------ win32 setup
 
@@ -501,11 +514,13 @@ class TrayApp:
         self._last_snapshot = snap
         self._last_decision = decision
 
-        bucket = th.pressure_bucket(decision.pressure_score, decision.action)
-        digit = th.icon_digit(decision.pressure_score)
         commit_pct = 100.0 * snap.commit_used / snap.commit_limit if snap.commit_limit else 0.0
         phys_pct = 100.0 * snap.physical_used / snap.physical_total if snap.physical_total else 0.0
         faults_rate = self._faults_rate()
+        bucket = th.pressure_bucket(decision.pressure_score, decision.action)
+        # v0.2 (pedido do usuário): o NÚMERO do ícone é o % de mem física
+        # em uso; a COR continua por pressão (filosofia do app intacta).
+        digit = th.icon_chars_mem(phys_pct)
         tip = th.tooltip_text(commit_pct, phys_pct, faults_rate, decision.action)
 
         key = (bucket, digit)
@@ -532,6 +547,26 @@ class TrayApp:
             except Exception as exc:  # excessão NUNCA mata o loop
                 print(f"tray: limpeza falhou (ignorada): {exc!r}", file=sys.stderr)
 
+        # v0.2 — PLANO DE LIMPEZA (intervalo/threshold escolhido no menu):
+        # dispara INDEPENDENTE do avaliador (pedido explícito do usuário),
+        # mas sob a MESMA trava de segurança (só executa com --execute) e
+        # com cooldown implícito pelo last_clean_ts compartilhado.
+        if th.schedule_is_due(self.schedule_mode, self.schedule_value,
+                             self.last_clean_ts, time.time(), phys_pct):
+            if self.execute:
+                try:
+                    self._do_clean(snap, decision,
+                                   motivo="plano de limpeza agendado")
+                except Exception as exc:  # excessão NUNCA mata o loop
+                    print(f"tray: limpeza do plano falhou (ignorada): {exc!r}",
+                          file=sys.stderr)
+            else:
+                # Sem --execute: recomenda (não executa) — honestidade do app.
+                self._show_balloon(
+                    "Flash Mem — plano dispararia agora",
+                    f"Plano '{self.schedule_mode}' atingido (mem {phys_pct:.0f}%). "
+                    "Bandeja em modo observação; use 'flashmem tray --execute'.")
+
     def _faults_rate(self) -> float:
         """Taxa faults/s da janela interna do avaliador (2 amostras recentes)."""
         window = getattr(self.evaluator, "_window", None)
@@ -541,7 +576,7 @@ class TrayApp:
         dt = t1 - t0
         return 0.0 if dt <= 0 else max(0.0, (f1 - f0) / dt)
 
-    def _do_clean(self, snap, decision) -> None:
+    def _do_clean(self, snap, decision, motivo: str = "avaliador") -> None:
         """clean() real + verify + history + balloon com o resultado."""
         from flashmem.core.clean import clean as core_clean
         from flashmem.core.verify import verify as core_verify
@@ -552,6 +587,10 @@ class TrayApp:
         after = measure_snapshot()
         efficacy = core_verify(snap, after, faults_before, self._faults_rate())
         self.evaluator.note_clean(time.time())
+        self.last_clean_ts = time.time()  # v0.2: base do plano (interval/threshold)
+        # v0.2 (pedido do usuário): texto do menu com o % liberado na última limpeza
+        self._last_clean_text = th.last_clean_pct_text(
+            report.freed_accounting, snap.physical_total)
         record = {
             "ts": time.time(),
             "event": "clean",
@@ -650,7 +689,9 @@ class TrayApp:
         try:
             for pos, (item_id, label, mflags) in enumerate(
                     th.build_menu_items(self.profile_name, is_elevated(),
-                                        list(profile_names()))):
+                                        list(profile_names()),
+                                        schedule_id=self.schedule_id,
+                                        last_clean_text=self._last_clean_text)):
                 if item_id == 0:
                     _insert_menu_item(hmenu, pos, 0, "", 0)  # separador
                 else:
@@ -689,6 +730,20 @@ class TrayApp:
                 self.evaluator = PressureEvaluator(self.config)
                 self._show_balloon("Flash Mem — perfil",
                                    f"Perfil alterado para '{self.profile_name}'.")
+        elif item_id >= 300:  # v0.2 — plano de limpeza (300..307)
+            matched = th.schedule_match(item_id)
+            if matched:
+                self.schedule_mode, self.schedule_value = matched
+                self.schedule_id = item_id
+                try:
+                    th.schedule_persist(self._schedule_path,
+                                        self.schedule_mode, self.schedule_value)
+                except OSError as exc:
+                    print(f"tray: falha ao gravar plano: {exc!r}", file=sys.stderr)
+                label = next((lbl for oid, _m, _v, lbl in th.SCHEDULE_OPTIONS
+                              if oid == item_id), "?")
+                self._show_balloon("Flash Mem — plano de limpeza",
+                                   f"Plano configurado: {label}.")
 
     def _clean_dryrun_balloon(self) -> None:
         """Item 101: dry-run + balloon com o plano resumido."""

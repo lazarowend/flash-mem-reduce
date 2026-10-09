@@ -21,3 +21,4 @@ watch_execute.log
 venv/
 .env
 flashmem.spec
+.worktrees/

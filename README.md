@@ -94,19 +94,40 @@ Default é **dry-run**: imprime a tabela de ações que *seriam* executadas
 confirmação `y/N` no stdin e executa, imprimindo relatório + verificação.
 
 ### `tray` — ícone na bandeja
-Ícone na área de notificação, colorido **por pressão** (não por % de RAM — a
+Ícone na área de notificação mostrando o **% de memória física em uso**
+(dois dígitos, ex.: `37`), colorido **por pressão** (não por % de RAM — a
 diferença central vs. limpadores tradicionais):
 
-| Cor | Significado | Dígito no ícone |
+| Cor | Significado | Número no ícone |
 |---|---|---|
-| 🟩 verde | pressão baixa (score < 0,5) | score ×10 (0-9) |
-| 🟨 amarelo | armado — atenção (0,5-0,85) | score ×10 |
-| 🟧 laranja | quase disparando (0,85-1,0) | score ×10 |
-| 🟥 vermelho | pressão real comprovada / limpando | "+" se além da escala |
+| 🟩 verde | pressão baixa (score < 0,5) | % de mem em uso (00-99) |
+| 🟨 amarelo | armado — atenção (0,5-0,85) | % de mem em uso |
+| 🟧 laranja | quase disparando (0,85-1,0) | % de mem em uso |
+| 🟥 vermelho | pressão real comprovada / limpando | % de mem em uso |
 
 Duplo clique = balloon com resumo do momento; clique direito = menu
-(status, plano dry-run, executar limpeza, trocar perfil, sair). Sem `--execute`
-apenas observa; com `--execute` limpa quando há prova de pressão (com cooldown).
+(Status, plano dry-run, executar limpeza, trocar Perfil, **Plano de
+limpeza** — ver abaixo — e Sair). Sem `--execute` apenas observa; com
+`--execute` limpa quando há prova de pressão (com cooldown).
+
+### Plano de limpeza (menu da bandeja)
+
+O submenu **"Plano de limpeza"** configura limpezas automáticas, persistidas
+em `flashmem_schedule.json` (sobrevivem ao reinício do app):
+
+| Opção | Comportamento |
+|---|---|
+| Automático: desativado | Nenhuma limpeza automática (default) |
+| A cada 1 / 5 / 15 / 30 minutos | Limpeza por intervalo de tempo |
+| Quando físico ≥ 85% / 90% / 95% | Limpeza por % de uso atingido |
+
+Após cada limpeza (manual, do avaliador ou do plano), o menu exibe em
+tempo real: **"Última limpeza: liberou X,X% da RAM (Y,YY GB)"** — a mesma
+medida honesta (contábil) aparece no balloon de resultado.
+
+> Segurança mantida: o plano só **executa** com `tray --execute`; em modo
+> observação ele avisa quando dispararia. Threshold/intervalo disparam
+> independente do avaliador de pressão — é um plano manual, explícito.
 
 ### `history`
 Lê `flashmem_history.jsonl` e imprime as últimas limpezas: quando, perfil,

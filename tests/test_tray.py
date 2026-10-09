@@ -118,7 +118,8 @@ class TestSmokeWin32(unittest.TestCase):
             # ícone em cache com chave (bucket, dígito) válida
             bucket, digit = app._current_key
             self.assertIn(bucket, th.BUCKET_RGB)
-            self.assertIn(digit, "0123456789+")
+            # v0.2: o dígito do ícone é o % de mem física (2 chars, '00'-'99')
+            self.assertRegex(digit, r"^\d{2}$")
             self.assertIn(app._current_key, app._icon_cache)
         finally:
             app._teardown()
