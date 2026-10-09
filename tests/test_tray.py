@@ -61,18 +61,30 @@ class TestTrayModule(unittest.TestCase):
         # 5 barras acesas: 5 topos brancos (LED) + corpo na cor do bucket
         self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 5)
         r2, g2, b2 = th.BUCKET_RGB["verde"]
-        # corpo das 5 barras (12 px visíveis cada — topo é branco) + moldura (60px)
+        # corpo das 5 barras (12 px cada — topo branco) + moldura (60px)
+        # MENOS os pixels que o RAIO amarelo sobrepõe (15 px do raio caem
+        # sobre barras acesas) — contagem verificada: 105
         self.assertEqual(sum(1 for row in px for p in row if p == (r2, g2, b2)),
-                         5 * 12 + 60)
+                         5 * 12 + 60 - 15)
+        # raio presente em amarelo elétrico
+        self.assertGreater(sum(1 for row in px for p in row
+                               if p == (255, 221, 0)), 15)
         # v0.2.4: fundo transparente — nada de quadrado escuro: pixel de
         # GAP interno (entre barras) é None
         self.assertIsNone(px[8][13])  # coluna de gap, linha do meio
 
     def test_pixels_do_icone_off(self):
         from flashmem import tray
-        # v0.2.4: bucket 'off' (fase do pulso) = grade TODA transparente
+        # v0.2.5: bucket 'off' = versão ESMAECIDA do ícone (o ícone
+        # PERMANECE na bandeja; não é mais grade vazia como na v0.2.4)
         px = tray._make_icon_pixels("off", "5")
-        self.assertTrue(all(p is None for row in px for p in row))
+        # moldura esmaecida em cinza (70,70,70) e raio em cinza (110,110,110)
+        self.assertEqual(px[0][0], (70, 70, 70))
+        self.assertGreater(sum(1 for row in px for p in row
+                               if p == (110, 110, 110)), 15)
+        # nada na cor 'acesa' de nenhum bucket
+        for rgb in th.BUCKET_RGB.values():
+            self.assertEqual(sum(1 for row in px for p in row if p == rgb), 0)
 
     def test_glifo_mais_tem_7_pixels(self):
         from flashmem import tray

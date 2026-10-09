@@ -263,25 +263,43 @@ def _draw_glyph(pixels: list[list[tuple[int, int, int]]], glyph: tuple[str, ...]
                 pixels[y0 + dy][x0 + dx] = color
 
 
-def _make_icon_pixels(bucket: str, digit: str) -> list[list[tuple[int, int, int] | None]]:
-    """16x16 RGBA: BARRAS DE BATERIA com FUNDO TRANSPARENTE (v0.2.4).
+# v0.2.5 (pedido do usuário): RAIO cortando a bateria — a marca do Flash.
+# Zigzag em 2px, desenhado DEPOIS das barras (sobrepõe). Coordenadas (x, y).
+_BOLT_PIXELS: list[tuple[int, int]] = [
+    (10, 3), (11, 3),
+    (9, 4), (10, 4),
+    (8, 5), (9, 5),
+    (7, 6), (8, 6), (9, 6),
+    (6, 7), (7, 7), (8, 7),
+    (7, 8), (8, 8),
+    (6, 9), (7, 9),
+    (5, 10), (6, 10),
+    (4, 11), (5, 11), (6, 11),
+    (3, 12), (4, 12), (5, 12),
+    (2, 13), (3, 13), (4, 13),
+    (2, 14), (3, 14),
+]
+_BOLT_COLOR = (255, 221, 0)        # amarelo elétrico (fase visível)
+_BOLT_COLOR_DIM = (110, 110, 110)  # cinza (fase esmaecida do pulso)
 
-    v0.2.4 (pedido do usuário): o quadrado de fundo escuro sumiu — só as
-    barras e a moldura existem; todo o resto é transparente (None).
-    - Barra ACESA: cor do bucket + topo branco (LED).
-    - Barra APAGADA: cinza-escuro (40,40,40) — visível no fundo transparente.
-    - Moldura fina na cor do bucket em volta das barras (delimita a bateria).
-    - bucket 'off' (fase do delay do pulso): TUDO transparente (None) —
-      o ícone desaparece de fato da bandeja; sem caixa preta, sem riscos.
+
+def _make_icon_pixels(bucket: str, digit: str) -> list[list[tuple[int, int, int] | None]]:
+    """16x16 RGBA: BATERIA de 6 barras + RAIO central (v0.2.5 — pedido do usuário).
+
+    - Fundo TRANSPARENTE (None fora de moldura/barras/raio).
+    - Moldura fina + barras acesas na cor da pressão; topo LED branco.
+    - RAIO amarelo elétrico cruzando o centro — o 'flash' do Flash Mem.
+    - bucket 'off' (fase do delay do pulso): versão ESMAECIDA do MESMO
+      ícone (moldura cinza, barras apagadas, raio cinza). O ícone
+      PERMANECE na bandeja (v0.2.4 usava NIM_DELETE e deslocava os
+      ícones vizinhos — o usuário pediu para ele ficar no lugar).
 
     `digit` = nº de barras acesas ('0'..'6').
     """
     off = bucket == "off"
-    if off:
-        # fase do pulso: ícone 100% transparente
-        return [[None] * 16 for _ in range(16)]
-    rgb = th.BUCKET_RGB.get(bucket, th.BUCKET_RGB["verde"])
+    rgb = (70, 70, 70) if off else th.BUCKET_RGB.get(bucket, th.BUCKET_RGB["verde"])
     bar_off = (40, 40, 40)
+    bolt_color = _BOLT_COLOR_DIM if off else _BOLT_COLOR
     px: list[list[tuple[int, int, int] | None]] = [[None] * 16 for _ in range(16)]
     # moldura da 'bateria': retângulo 1px na cor do bucket (x=0..15, y=0..15)
     for i in range(16):
@@ -289,12 +307,15 @@ def _make_icon_pixels(bucket: str, digit: str) -> list[list[tuple[int, int, int]
     # 6 barras de 1px, gap 1: x = 2,4,6,8,10,12 (dentro da moldura)
     lit = max(0, min(6, int(digit)))
     for bar in range(6):
-        x = 2 + bar * 2  # x = 2,4,6,8,10,12
+        x = 2 + bar * 2
         is_lit = bar < lit
         color = rgb if is_lit else bar_off
         top = (255, 255, 255) if is_lit else color
         for y in range(2, 15):
             px[y][x] = top if y == 2 else color
+    # raio por cima de tudo — a assinatura visual do app
+    for (bx, by) in _BOLT_PIXELS:
+        px[by][bx] = bolt_color
     return px
 
 
@@ -582,31 +603,24 @@ class TrayApp:
         cycle = PULSE_VISIBLE_S + PULSE_HIDDEN_S
         visible_now = (elapsed % cycle) < PULSE_VISIBLE_S  # True = visível
 
-        # v0.2.4 (pedido do usuário): fase off = ícone REMOVIDO da bandeja
-        # (NIM_DELETE/NIM_ADD). O HICON totalmente transparente renderizava
-        # como caixa preta riscada no Explorer do Win10 — remover é a única
-        # forma garantida de sumir de verdade.
+        # v0.2.5 (pedido do usuário): o ícone PERMANECE na bandeja nas duas
+        # fases. Antes a fase off removia via NIM_DELETE e os ícones vizinhos
+        # deslizavam a cada ciclo (irritante). Agora: fase off = MESMO ícone
+        # na versão ESMAECIDA (bucket 'off') — pulso sutil, zero deslocamento.
         visual_key = (key, visible_now)
         if visual_key != self._last_visual_key:
-            if visible_now:
-                hicon = self._ensure_icon(bucket, digit)
-                nid = _nid(tip, hwnd=self.hwnd, hicon=hicon,
-                           flags=NIF_MESSAGE | NIF_ICON | NIF_TIP)
-                if self._added:
-                    ok = _shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid))
-                else:
-                    ok = _shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
-                    self._added = bool(ok)
-                if not ok:
-                    print(f"tray: NIM_ADD/MODIFY falhou (err {ctypes.get_last_error()})",
-                          file=sys.stderr)
-            elif self._added:
-                nid = _nid(hwnd=self.hwnd)
-                if not _shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid)):
-                    print(f"tray: NIM_DELETE falhou (err {ctypes.get_last_error()})",
-                          file=sys.stderr)
-                else:
-                    self._added = False
+            show_bucket = bucket if visible_now else "off"
+            hicon = self._ensure_icon(show_bucket, digit)
+            nid = _nid(tip, hwnd=self.hwnd, hicon=hicon,
+                       flags=NIF_MESSAGE | NIF_ICON | NIF_TIP)
+            if self._added:
+                ok = _shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid))
+            else:
+                ok = _shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+                self._added = bool(ok)
+            if not ok:
+                print(f"tray: NIM_ADD/MODIFY falhou (err {ctypes.get_last_error()})",
+                      file=sys.stderr)
             self._last_visual_key = visual_key
             self._last_tip = tip
         elif tip != self._last_tip and self._added:

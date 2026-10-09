@@ -40,7 +40,7 @@ def _mix(c1, c2, t):
 
 _TOP = (0x1E, 0x9E, 0x5A)      # verde Flash Mem (topo do gradiente)
 _BOTTOM = (0x0D, 0x2B, 0x52)   # azul-escuro (base do gradiente)
-_BOLT = (0xFF, 0xFF, 0xFF)     # relâmpago branco
+_BOLT = (0xFF, 0xDD, 0x00)     # v0.2.5: raio AMARELO ELÉTRICO (era branco)
 _EDGE = (0x0A, 0x14, 0x1E)     # contorno escuro
 
 
