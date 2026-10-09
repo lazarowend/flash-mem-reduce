@@ -580,10 +580,13 @@ class TrayApp:
                 print(f"tray: NIM_MODIFY falhou (err {ctypes.get_last_error()})",
                       file=sys.stderr)
             self._last_visual_key = visual_key
+            self._last_tip = tip
         elif tip != self._last_tip:
-            # só tooltip muda: NIM_MODIFY apenas do szTip (sem tocar no ícone)
-            nid = _nid(tip, hwnd=self.hwnd,
-                       flags=NIF_MESSAGE | NIF_ICON | NIF_TIP)
+            # só tooltip muda: NIM_MODIFY APENAS do szTip — SEM NIF_ICON!
+            # (BUG v0.2.2 corrigido: com NIF_ICON e hIcon=NULL o Windows
+            #  apagava o ícone da bandeja a cada atualização de tooltip —
+            #  daí o ícone 'sumir' e só piscar de vez em quando.)
+            nid = _nid(tip, hwnd=self.hwnd, flags=NIF_TIP)
             if not _shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid)):
                 print(f"tray: NIM_MODIFY (tip) falhou (err {ctypes.get_last_error()})",
                       file=sys.stderr)
