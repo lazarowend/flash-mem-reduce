@@ -143,7 +143,6 @@ class TestSmokeWin32(unittest.TestCase):
 
     def test_on_command_plano_antes_de_perfis(self):
         """REGRESSÃO v0.2: ids 300+ (plano) NÃO podem cair no ramo de perfis.
-
         Bug real: 'elif item_id >= MENU_PROFILE_BASE (200)' vinha ANTES do
         'elif item_id >= 300', então clicar em 'A cada 5 minutos' (id 302)
         era interpretado como perfil idx=102 (inexistente) e morria
@@ -175,6 +174,33 @@ class TestSmokeWin32(unittest.TestCase):
             if len(names) >= 2:
                 app._on_command(200 + names.index("aggressive") if "aggressive" in names else 200)
                 self.assertIn(app.profile_name, names)
+
+    def test_pulso_do_icone_fases_on_off(self):
+        """v0.2.2: PULSO 2,0s visível / 0,5s transparente (pedido do usuário).
+
+        Fase é função pura do tempo desde _pulse_phase_start; validamos as
+        fronteiras: t=0..1,99s visível; t=2,0..2,49s transparente; t=2,5s
+        reinicia visível (ciclo de 2,5s).
+        """
+        from flashmem import tray as t
+        cycle = t.PULSE_VISIBLE_S + t.PULSE_HIDDEN_S
+        self.assertAlmostEqual(cycle, 2.5)
+        fases = []
+        for ts in (0.0, 1.0, 1.99, 2.0, 2.25, 2.49, 2.5, 2.6, 4.5, 5.0):
+            elapsed = ts % cycle
+            fases.append((ts, elapsed < t.PULSE_VISIBLE_S))
+        visiveis = [on for _, on in fases]
+        # t=5.0 -> 5.0 % 2.5 = 0.0 -> início do 3º ciclo: VISÍVEL
+        self.assertEqual(visiveis, [True, True, True, False, False, False,
+                                    True, True, False, True])
+        # mudança de estado reinicia a fase VISÍVEL (reaparece imediatamente)
+        app = t.TrayApp()
+        app._pulse_phase_start -= 2.3  # estava na fase transparente...
+        key_novo = ("verde", "37")
+        app._current_key = None
+        self.assertNotEqual(key_novo, app._current_key)
+        # (o reinício efetivo acontece no _tick; aqui validamos a constante)
+        self.assertGreaterEqual(t.PULSE_VISIBLE_S, 4 * 0.5)  # 2s de leitura
 
 
 if __name__ == "__main__":

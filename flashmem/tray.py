@@ -284,6 +284,21 @@ def _make_icon_pixels(bucket: str, digit: str) -> list[list[tuple[int, int, int]
 def _create_icon(bucket: str, digit: str):
     """Cria HICON 16x16 via CreateIconIndirect (bitmap de cor + máscara AND)."""
     pixels = _make_icon_pixels(bucket, digit)
+    return _pixels_to_hicon(pixels)
+
+
+def _create_transparent_icon():
+    """HICON 16x16 TOTALMENTE transparente (fase 'off' do pulso v0.2.2).
+
+    Todos os pixels com máscara AND = 1 (não desenha) e alpha 0 — o ícone
+    some da bandeja por instantes, chamando atenção ao reaparecer.
+    """
+    px = [[None] * 16 for _ in range(16)]
+    return _pixels_to_hicon(px)
+
+
+def _pixels_to_hicon(pixels):
+    """Converte grade 16x16 (RGB ou None=transparente) em HICON."""
     height = len(pixels)
     width = len(pixels[0])
     # Bitmap de cor: 32bpp BGRA, linha de baixo para cima (bottom-up).
@@ -291,21 +306,26 @@ def _create_icon(bucket: str, digit: str):
     for y in range(height):
         row = pixels[height - 1 - y]  # bottom-up
         for x in range(width):
-            r, g, b = row[x]
             off = (y * width + x) * 4
+            if row[x] is None:
+                # pixel transparente: alpha 0 (a máscara AND também apaga)
+                color_buf[off + 3] = 0x00
+                continue
+            r, g, b = row[x]
             color_buf[off] = b; color_buf[off + 1] = g
             color_buf[off + 2] = r; color_buf[off + 3] = 0xFF
-    # Máscara AND monocromática 1bpp (padded até 32 bits por linha): 1 = opaco
+    # Máscara AND monocromática 1bpp (padded até 32 bits por linha): 1 = apagado
     mask_stride = ((width + 31) // 32) * 4
     mask_buf = (ctypes.c_ubyte * (mask_stride * height))()
     for y in range(height):
         row = pixels[height - 1 - y]
         for x in range(width):
-            if x < width:
-                # bit a bit: MSB primeiro dentro de cada byte
-                bit = 0x80 >> (x % 8)
-                if row[x] is not None:
-                    mask_buf[y * mask_stride + x // 8] &= ~bit  # 0 = opaco
+            bit = 0x80 >> (x % 8)
+            if row[x] is None:
+                # transparente: bit em 1 = NÃO desenha na bandeja
+                mask_buf[y * mask_stride + x // 8] |= bit
+            else:
+                mask_buf[y * mask_stride + x // 8] &= ~bit  # 0 = opaco
     hbm_color = _gdi32.CreateBitmap(width, height, 1, 32, color_buf)
     hbm_mask = _gdi32.CreateBitmap(width, height, 1, 1, mask_buf)
     if not hbm_color or not hbm_mask:
@@ -369,7 +389,14 @@ def _insert_menu_item(hmenu, position: int, item_id: int, label: str,
 # --------------------------------------------------------------------------- TrayApp
 
 _TIMER_ID = 1
-_TIMER_MS = 1000
+_TIMER_MS = 250  # 4 ticks/s — resolução para o pulso (2,0s on / 0,5s off)
+
+# v0.2.2 (pedido do usuário): PULSO do ícone da bandeja.
+# Ciclo de 2,5s: 2,0s visível (mostrando o % de RAM) + 0,5s transparente.
+# O reaparecer chama a atenção sem notificação intrusiva. A FASE reinicia
+# quando o estado muda (cor/dígito), e o tooltip continua sempre visível.
+PULSE_VISIBLE_S = 2.0
+PULSE_HIDDEN_S = 0.5
 _CLASS_NAME = "FlashMemTrayWnd"
 
 # REGISTRO GLOBAL OBRIGATÓRIO (KB: callback ctypes coletado = crash do processo):
@@ -415,6 +442,11 @@ class TrayApp:
         self.schedule_id = self._schedule_id_from_mode()
         self.last_clean_ts: float = 0.0  # timestamp da última limpeza (plano+avaliador)
         self._last_clean_text: str = ""   # 'Última limpeza: liberou X% da RAM'
+        # v0.2.2 — estado do PULSO do ícone (2,0s on / 0,5s off)
+        self._pulse_phase_start: float = time.time()
+        self._last_visual_key: tuple | None = None
+        self._last_tip: str = ""
+        self._transparent_hicon = None  # cache do ícone transparente (1x)
 
     def _schedule_id_from_mode(self) -> int:
         """Deriva o id do menu (radio) a partir de (mode, value) carregados."""
@@ -523,22 +555,39 @@ class TrayApp:
         digit = th.icon_chars_mem(phys_pct)
         tip = th.tooltip_text(commit_pct, phys_pct, faults_rate, decision.action)
 
+        # ---------------- v0.2.2 PULSO: 2,0s visível / 0,5s transparente ----------------
         key = (bucket, digit)
         if key != self._current_key:
+            self._current_key = key
+            self._pulse_phase_start = time.time()  # estado novo: reinicia visível
+        now = time.time()
+        elapsed = now - self._pulse_phase_start
+        cycle = PULSE_VISIBLE_S + PULSE_HIDDEN_S
+        phase_on = (elapsed % cycle) < PULSE_VISIBLE_S  # True = visível
+        visible_now = phase_on
+
+        if visible_now:
             hicon = self._ensure_icon(bucket, digit)
+        else:
+            hicon = self._ensure_transparent_icon()
+        # Só envia NIM_MODIFY quando a FASE VISUAL muda (on<->off) ou quando o
+        # estado (bucket/digit) mudou — evita IPC com o Explorer a cada 250ms.
+        visual_key = (key, visible_now)
+        if visual_key != self._last_visual_key:
             nid = _nid(tip, hwnd=self.hwnd, hicon=hicon,
                        flags=NIF_MESSAGE | NIF_ICON | NIF_TIP)
             if not _shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid)):
                 print(f"tray: NIM_MODIFY falhou (err {ctypes.get_last_error()})",
                       file=sys.stderr)
-            self._current_key = key
-        else:
-            # só tooltip muda: NIM_MODIFY apenas do szTip
+            self._last_visual_key = visual_key
+        elif tip != self._last_tip:
+            # só tooltip muda: NIM_MODIFY apenas do szTip (sem tocar no ícone)
             nid = _nid(tip, hwnd=self.hwnd,
                        flags=NIF_MESSAGE | NIF_ICON | NIF_TIP)
             if not _shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid)):
                 print(f"tray: NIM_MODIFY (tip) falhou (err {ctypes.get_last_error()})",
                       file=sys.stderr)
+            self._last_tip = tip
 
         # Limpeza automática: SÓ quando usuário autorizou via --execute.
         if decision.action == "clean" and self.execute:
@@ -646,6 +695,12 @@ class TrayApp:
                 self._icon_cache[key] = hicon
             return hicon
         return self._icon_cache[key]
+
+    def _ensure_transparent_icon(self):
+        """HICON transparente (fase 'off' do pulso) — criado uma única vez."""
+        if self._transparent_hicon is None:
+            self._transparent_hicon = _create_transparent_icon()
+        return self._transparent_hicon
 
     # ------------------------------------------------------------------ balloons
 
@@ -798,6 +853,9 @@ class TrayApp:
                 if hicon:
                     _user32.DestroyIcon(hicon)
             self._icon_cache.clear()
+            if self._transparent_hicon:
+                _user32.DestroyIcon(self._transparent_hicon)
+                self._transparent_hicon = None
         except Exception as exc:
             print(f"tray: teardown parcial: {exc!r}", file=sys.stderr)
 
