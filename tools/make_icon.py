@@ -43,22 +43,35 @@ _BOTTOM = (0x0D, 0x2B, 0x52)   # azul-escuro (base do gradiente)
 _BOLT = (0xFF, 0xDD, 0x00)     # v0.2.5: raio AMARELO ELÉTRICO (era branco)
 _EDGE = (0x0A, 0x14, 0x1E)     # contorno escuro
 
+# v0.2.6: raio do USUÁRIO (assets/bolt.png, 32x32 RGBA silhueta).
+# A máscara vem de tools/bolt_mask.py (máscara 16x16 por média de alpha
+# 2x2); aqui upsacalemos por vizinho-mais-próximo — a forma do usuário.
+import importlib.util as _ilu
+import os as _os
+_spec = _ilu.spec_from_file_location(
+    "bolt_mask", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                               "bolt_mask.py"))
+if _spec and _spec.loader:
+    _bm = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_bm)
+    _BOLT16 = _bm.bolt_mask_16(_os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+        "assets", "bolt.png"))
+else:  # pragma: no cover
+    _BOLT16 = [[0] * 16 for _ in range(16)]
 
-def _in_bolt(x: float, y: float, s: float) -> bool:
-    """Relâmpago estilizado em coordenadas normalizadas (0..1), escala s.
 
-    Forma clássica: dois paralelogramos que se cruzam no meio.
+def _in_bolt(x: float, y: float, s: float) -> int:
+    """Intensidade do raio do usuário em (x, y) na escala s (0..255).
+
+    Amostra a máscara 16x16 no pixel mais próximo — preserva a forma
+    exata enviada (com anti-aliasing do downscale original).
     """
-    u, v = x / s, y / s  # normaliza dentro do quadrado
-    # paralelogramo superior (haste desce à direita)
-    if 0.18 <= u <= 0.62 and 0.08 <= v <= 0.50 and (u - 0.18) >= (v - 0.08) * 0.55:
-        if (u - 0.18) <= (v - 0.08) * 0.55 + 0.30:
-            return True
-    # paralelogramo inferior (ponta desce à esquerda)
-    if 0.30 <= u <= 0.80 and 0.46 <= v <= 0.92 and (0.80 - u) >= (v - 0.46) * 0.42:
-        if (0.80 - u) <= (v - 0.46) * 0.42 + 0.34:
-            return True
-    return False
+    if s <= 0:
+        return 0
+    mx = min(15, max(0, int(x / s * 16)))
+    my = min(15, max(0, int(y / s * 16)))
+    return _BOLT16[my][mx]
 
 
 def _rounded_outside(x: float, y: float, s: float, r: float) -> float:
@@ -86,8 +99,12 @@ def render(size: int) -> list[list[tuple[int, int, int, int]]]:
             base = _mix(_TOP, _BOTTOM, t)
             if d > radius * 0.55:                  # faixa do contorno
                 base = _EDGE
-            if _in_bolt(x, y, s):
-                base = _BOLT
+            # raio do usuário: blend com alpha da máscara (anti-aliasing)
+            bolt_a = _in_bolt(x, y, s)
+            if bolt_a > 0:
+                af = bolt_a / 255.0
+                base = tuple(int(base[i] * (1 - af) + _BOLT[i] * af)
+                             for i in range(3))
             # anti-aliasing da borda externa
             alpha = 255
             fade = d - (radius * 0.85 - edge * 0.9)

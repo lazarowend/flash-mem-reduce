@@ -58,17 +58,16 @@ class TestTrayModule(unittest.TestCase):
         # moldura na cor do bucket
         r, g, b = th.BUCKET_RGB["verde"]
         self.assertEqual(px[0][0], (r, g, b))
-        # 5 barras acesas: 5 topos brancos (LED) + corpo na cor do bucket
-        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 5)
+        # 5 barras acesas com topo LED branco — MENOS os topos que o RAIO
+        # do usuário (bolt.png) cruza: verificado empiricamente = 2
+        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 2)
         r2, g2, b2 = th.BUCKET_RGB["verde"]
-        # corpo das 5 barras (12 px cada — topo branco) + moldura (60px)
-        # MENOS os pixels que o RAIO amarelo sobrepõe (15 px do raio caem
-        # sobre barras acesas) — contagem verificada: 105
-        self.assertEqual(sum(1 for row in px for p in row if p == (r2, g2, b2)),
-                         5 * 12 + 60 - 15)
-        # raio presente em amarelo elétrico
+        # corpo das 5 barras + moldura MENOS pixels cobertos pelo RAIO do
+        # usuário (bolt.png maior que o v0.2.5): 77 verificado empiricamente
+        self.assertEqual(sum(1 for row in px for p in row if p == (r2, g2, b2)), 77)
+        # raio em amarelo elétrico sobre fundo transparente (69 px puros)
         self.assertGreater(sum(1 for row in px for p in row
-                               if p == (255, 221, 0)), 15)
+                               if p == (255, 221, 0)), 40)
         # v0.2.4: fundo transparente — nada de quadrado escuro: pixel de
         # GAP interno (entre barras) é None
         self.assertIsNone(px[8][13])  # coluna de gap, linha do meio
@@ -88,9 +87,9 @@ class TestTrayModule(unittest.TestCase):
 
     def test_glifo_mais_tem_7_pixels(self):
         from flashmem import tray
-        # v0.2.3: o '+' virou '6 barras acesas' — 6 topos LED brancos
+        # v0.2.6: raio do USUÁRIO cruza 4 dos 6 topos LED — restam 2 brancos
         px = tray._make_icon_pixels("vermelho", "6")
-        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 6)
+        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 2)
 
     def test_notifyicondata_tamanho_x64(self):
         from flashmem import tray
