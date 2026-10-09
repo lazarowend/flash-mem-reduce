@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Builds PyInstaller
+build_pyinstaller/
+build/
+dist/
+*.spec.bak
+
+# Artefatos locais de execução (histórico/config do usuário — não versionar)
+flashmem_history.jsonl
+flashmem.json
+watch.log
+watch_execute.log
+
+# Ambiente
+.venv/
+venv/
+.env
+flashmem.spec
