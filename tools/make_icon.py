@@ -44,8 +44,9 @@ _BOLT = (0xFF, 0xDD, 0x00)     # v0.2.5: raio AMARELO ELÉTRICO (era branco)
 _EDGE = (0x0A, 0x14, 0x1E)     # contorno escuro
 
 # v0.2.6: raio do USUÁRIO (assets/bolt.png, 32x32 RGBA silhueta).
-# A máscara vem de tools/bolt_mask.py (máscara 16x16 por média de alpha
-# 2x2); aqui upsacalemos por vizinho-mais-próximo — a forma do usuário.
+# Para 16px: máscara 16x16 (média de alpha 2x2 — tools/bolt_mask.py).
+# Para >=32px: decodifica o PNG ORIGINAL 32x32 e usa o alpha direto
+# (nítido, sem serrilhado de upscale) com bilinear nos tamanhos >32.
 import importlib.util as _ilu
 import os as _os
 _spec = _ilu.spec_from_file_location(
@@ -54,24 +55,42 @@ _spec = _ilu.spec_from_file_location(
 if _spec and _spec.loader:
     _bm = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(_bm)
-    _BOLT16 = _bm.bolt_mask_16(_os.path.join(
-        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
-        "assets", "bolt.png"))
+    _ASSETS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                            "assets")
+    _BOLT16 = _bm.bolt_mask_16(_os.path.join(_ASSETS, "bolt.png"))
+    _BW, _BH, _BOLT32ROWS = _bm.decode_png_rgba(_os.path.join(_ASSETS, "bolt.png"))
 else:  # pragma: no cover
     _BOLT16 = [[0] * 16 for _ in range(16)]
+    _BW = _BH = 32
+    _BOLT32ROWS = [bytes(32 * 4)] * 32
 
 
 def _in_bolt(x: float, y: float, s: float) -> int:
     """Intensidade do raio do usuário em (x, y) na escala s (0..255).
 
-    Amostra a máscara 16x16 no pixel mais próximo — preserva a forma
-    exata enviada (com anti-aliasing do downscale original).
+    16px: máscara downsacled. >=32px: alpha do PNG 32x32 original com
+    interpolação bilinear (nítido em 48/256).
     """
     if s <= 0:
         return 0
-    mx = min(15, max(0, int(x / s * 16)))
-    my = min(15, max(0, int(y / s * 16)))
-    return _BOLT16[my][mx]
+    if s <= 16:
+        mx = min(15, max(0, int(x / s * 16)))
+        my = min(15, max(0, int(y / s * 16)))
+        return _BOLT16[my][mx]
+    # amostra bilinear no PNG 32x32 original
+    fx = x / s * _BW - 0.5
+    fy = y / s * _BH - 0.5
+    x0, y0 = int(fx), int(fy)
+    tx, ty = fx - x0, fy - y0
+    def _a(px_, py_):
+        px_ = min(_BW - 1, max(0, px_))
+        py_ = min(_BH - 1, max(0, py_))
+        return _BOLT32ROWS[py_][px_ * 4 + 3]
+    a00, a10 = _a(x0, y0), _a(x0 + 1, y0)
+    a01, a11 = _a(x0, y0 + 1), _a(x0 + 1, y0 + 1)
+    val = (a00 * (1 - tx) * (1 - ty) + a10 * tx * (1 - ty) +
+           a01 * (1 - tx) * ty + a11 * tx * ty)
+    return max(0, min(255, int(val)))
 
 
 def _rounded_outside(x: float, y: float, s: float, r: float) -> float:
@@ -82,35 +101,24 @@ def _rounded_outside(x: float, y: float, s: float, r: float) -> float:
 
 
 def render(size: int) -> list[list[tuple[int, int, int, int]]]:
-    """Renderiza o ícone `size x size` em RGBA (top-down)."""
+    """Renderiza o ícone `size x size` em RGBA (top-down).
+
+    v0.2.7 (pedido do usuário): SÓ O RAIO — sem fundo, sem moldura, sem
+    gradiente. A silhueta do bolt.png do usuário em amarelo elétrico,
+    escalada para preencher o canvas, com o alpha real da máscara
+    (anti-aliasing preservado). Tudo fora do raio é transparente.
+    """
     s = float(size)
-    radius = s * 0.22
-    edge = max(1.0, s * 0.045)
     px: list[list[tuple[int, int, int, int]]] = []
     for yy in range(size):
         row: list[tuple[int, int, int, int]] = []
         for xx in range(size):
-            x, y = xx + 0.5, yy + 0.5
-            d = _rounded_outside(x, y, s, radius)
-            if d > radius * 0.85 + edge:
-                row.append((0, 0, 0, 0))          # totalmente fora: transparente
-                continue
-            t = y / s                              # gradiente vertical
-            base = _mix(_TOP, _BOTTOM, t)
-            if d > radius * 0.55:                  # faixa do contorno
-                base = _EDGE
-            # raio do usuário: blend com alpha da máscara (anti-aliasing)
-            bolt_a = _in_bolt(x, y, s)
-            if bolt_a > 0:
-                af = bolt_a / 255.0
-                base = tuple(int(base[i] * (1 - af) + _BOLT[i] * af)
-                             for i in range(3))
-            # anti-aliasing da borda externa
-            alpha = 255
-            fade = d - (radius * 0.85 - edge * 0.9)
-            if fade > 0 and edge > 0:
-                alpha = max(0, min(255, int(255 * (1.0 - fade / (edge * 1.9)))))
-            row.append((base[0], base[1], base[2], alpha))
+            bolt_a = _in_bolt(xx + 0.5, yy + 0.5, s)
+            if bolt_a == 0:
+                row.append((0, 0, 0, 0))            # fora do raio: transparente
+            else:
+                # alpha do PNG original preservado — bordas suaves reais
+                row.append((_BOLT[0], _BOLT[1], _BOLT[2], bolt_a))
         px.append(row)
     return px
 
