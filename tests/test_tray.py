@@ -61,18 +61,18 @@ class TestTrayModule(unittest.TestCase):
         # 5 barras acesas: 5 topos brancos (LED) + corpo na cor do bucket
         self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 5)
         r2, g2, b2 = th.BUCKET_RGB["verde"]
-        # corpo das 5 barras acesas (11 linhas — topo é branco) + moldura (60px)
+        # corpo das 5 barras (12 px visíveis cada — topo é branco) + moldura (60px)
         self.assertEqual(sum(1 for row in px for p in row if p == (r2, g2, b2)),
-                         5 * 11 + 60)
+                         5 * 12 + 60)
+        # v0.2.4: fundo transparente — nada de quadrado escuro: pixel de
+        # GAP interno (entre barras) é None
+        self.assertIsNone(px[8][13])  # coluna de gap, linha do meio
 
     def test_pixels_do_icone_off(self):
         from flashmem import tray
-        # v0.2.3: bucket 'off' (fase do pulso) — NENHUMA barra acesa, sem
-        # branco, moldura escura (o ícone 'respira' escuro, não caixa preta)
+        # v0.2.4: bucket 'off' (fase do pulso) = grade TODA transparente
         px = tray._make_icon_pixels("off", "5")
-        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 0)
-        # barras apagadas em cinza-escuro: 6 barras x 12 linhas = 72 px
-        self.assertEqual(sum(1 for row in px for p in row if p == (10, 10, 10)), 72)
+        self.assertTrue(all(p is None for row in px for p in row))
 
     def test_glifo_mais_tem_7_pixels(self):
         from flashmem import tray
@@ -147,14 +147,15 @@ class TestSmokeWin32(unittest.TestCase):
     def test_create_icon_todos_os_pares(self):
         from flashmem import tray as t
         criados = 0
+        # v0.2.3+: digit é o Nº DE BARRAS ('0'..'6') — 7 valores x 4 cores
         for bucket in ("verde", "amarelo", "laranja", "vermelho"):
-            for digit in "0123456789+":
+            for digit in "0123456":
                 hicon = t._create_icon(bucket, digit)
                 if not hicon:
                     self.skipTest("CreateIconIndirect indisponível")
                 t._user32.DestroyIcon(hicon)
                 criados += 1
-        self.assertEqual(criados, 44)
+        self.assertEqual(criados, 28)  # 4 cores x 7 contagens de barras
 
     def test_on_command_plano_antes_de_perfis(self):
         """REGRESSÃO v0.2: ids 300+ (plano) NÃO podem cair no ramo de perfis.
