@@ -38,14 +38,26 @@ Físico alto sozinho **nunca** dispara — apenas arma o avaliador.
 ### Via git clone
 
 ```bat
-git clone <url-do-repositorio>
-cd flashmem
-python -m flashmem.cli status
+git clone https://github.com/lazarowend/flash-mem-reduce.git
+cd flash-mem-reduce
+install.bat
 ```
 
+O `install.bat` faz tudo: detecta Python, builda `flashmem.exe` com PyInstaller
+(ou instala em modo Python se você recusar), copia para `%LOCALAPPDATA%\FlashMem`
+e cria atalhos com o ícone oficial na **Área de Trabalho** e no **Menu Iniciar**.
+Pergunta se você quer autoiniciar com o Windows.
+
 Requisitos: Windows 10/11 x64 + Python 3.10 ou superior (testado em 3.14).
-**Zero `pip install`** — apenas stdlib (`ctypes`, `json`, `dataclasses`,
-`argparse`, `unittest`...).
+**Zero `pip install`** para o app em si (apenas stdlib); PyInstaller é opcional
+para gerar o .exe.
+
+### Desinstalação
+
+Rode `uninstall.bat` na pasta do projeto: encerra o app, remove `%LOCALAPPDATA%\FlashMem`,
+os atalhos (Desktop, Menu Iniciar, Autoinicio) e — se você quiser — faz backup
+do seu histórico de limpezas em `Documents\FlashMem-backup`. O código-fonte
+clonado não é tocado.
 
 ### Alternativa: executável empacotado
 

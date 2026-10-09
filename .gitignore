@@ -12,6 +12,7 @@ dist/
 
 # Artefatos locais de execução (histórico/config do usuário — não versionar)
 flashmem_history.jsonl
+flashmem_schedule.json
 flashmem.json
 watch.log
 watch_execute.log
