@@ -141,6 +141,41 @@ class TestSmokeWin32(unittest.TestCase):
                 criados += 1
         self.assertEqual(criados, 44)
 
+    def test_on_command_plano_antes_de_perfis(self):
+        """REGRESSÃO v0.2: ids 300+ (plano) NÃO podem cair no ramo de perfis.
+
+        Bug real: 'elif item_id >= MENU_PROFILE_BASE (200)' vinha ANTES do
+        'elif item_id >= 300', então clicar em 'A cada 5 minutos' (id 302)
+        era interpretado como perfil idx=102 (inexistente) e morria
+        silenciosamente — o plano nunca mudava de 'desativado'.
+        """
+        from flashmem import tray as t
+        import tempfile, os, json
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "sched.json")
+            app = t.TrayApp()
+            app._schedule_path = path
+            app._show_balloon = lambda *a, **k: None  # sem GUI no teste
+            # seleciona 'A cada 5 minutos' (id 302) e '90%' (id 306)
+            app._on_command(302)
+            self.assertEqual(app.schedule_mode, "interval")
+            self.assertEqual(app.schedule_value, 5)
+            self.assertEqual(app.schedule_id, 302)
+            self.assertEqual(json.load(open(path, encoding="utf-8")),
+                             {"mode": "interval", "value": 5})
+            app._on_command(306)
+            self.assertEqual(app.schedule_mode, "threshold")
+            self.assertEqual(app.schedule_value, 90)
+            # voltar para 'desativado' também precisa funcionar (id 300)
+            app._on_command(300)
+            self.assertEqual(app.schedule_mode, "off")
+            self.assertIsNone(app.schedule_value)
+            # e perfis continuam funcionando (id 201 = 'standard' se existir)
+            names = list(t.profile_names())
+            if len(names) >= 2:
+                app._on_command(200 + names.index("aggressive") if "aggressive" in names else 200)
+                self.assertIn(app.profile_name, names)
+
 
 if __name__ == "__main__":
     unittest.main()

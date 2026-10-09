@@ -719,18 +719,10 @@ class TrayApp:
             self._clean_execute()
         elif item_id == MENU_EXIT:
             _user32.DestroyWindow(self.hwnd)
-        elif item_id >= MENU_PROFILE_BASE:
-            idx = item_id - MENU_PROFILE_BASE
-            names = list(profile_names())
-            if 0 <= idx < len(names):
-                self.profile_name = names[idx]
-                self.config = PROFILES[self.profile_name]
-                # Avaliador NOVO: trocar perfil zera armed_ticks/janela —
-                # limiares diferentes não herdam estado do perfil anterior.
-                self.evaluator = PressureEvaluator(self.config)
-                self._show_balloon("Flash Mem — perfil",
-                                   f"Perfil alterado para '{self.profile_name}'.")
         elif item_id >= 300:  # v0.2 — plano de limpeza (300..307)
+            # IMPORTANTE: este ramo vem ANTES do de perfis (>=200), senão os
+            # ids 300+ seriam capturados por item_id >= MENU_PROFILE_BASE e a
+            # seleção do plano morreria silenciosamente (bug corrigido).
             matched = th.schedule_match(item_id)
             if matched:
                 self.schedule_mode, self.schedule_value = matched
@@ -744,6 +736,17 @@ class TrayApp:
                               if oid == item_id), "?")
                 self._show_balloon("Flash Mem — plano de limpeza",
                                    f"Plano configurado: {label}.")
+        elif item_id >= MENU_PROFILE_BASE:
+            idx = item_id - MENU_PROFILE_BASE
+            names = list(profile_names())
+            if 0 <= idx < len(names):
+                self.profile_name = names[idx]
+                self.config = PROFILES[self.profile_name]
+                # Avaliador NOVO: trocar perfil zera armed_ticks/janela —
+                # limiares diferentes não herdam estado do perfil anterior.
+                self.evaluator = PressureEvaluator(self.config)
+                self._show_balloon("Flash Mem — perfil",
+                                   f"Perfil alterado para '{self.profile_name}'.")
 
     def _clean_dryrun_balloon(self) -> None:
         """Item 101: dry-run + balloon com o plano resumido."""
