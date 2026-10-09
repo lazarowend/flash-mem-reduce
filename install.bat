@@ -82,11 +82,12 @@ if not exist "%PS%" set "PS=powershell"
 set "MODE=exe"
 if exist "%DEST%\dist\flashmem.exe" (
     set "TARGETPATH=%DEST%\dist\flashmem.exe"
-    set "ARGS="
+    set "ARGS=tray"
 ) else (
     set "MODE=python"
     set "TARGETPATH=%LOCALAPPDATA%\Microsoft\Windows\py.exe"
-    if not exist "%TARGETPATH%" for %%i in (python.exe) do set "TARGETPATH=%%~$PATH:i"
+    if not exist "%TARGETPATH%" for %%i in (pythonw.exe) do set "TARGETPATH=%%~$PATH:i"
+    rem pythonw = SEM janela de console (app de bandeja roda invisivel em background)
     set "ARGS=-m flashmem.cli tray"
 )
 if not defined ICON set "ICON=%TARGETPATH%,0"

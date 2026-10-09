@@ -451,8 +451,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    """Entry point da CLI. Retorna código de saída do processo."""
+    """Entry point da CLI. Retorna código de saída do processo.
+
+    Duplo clique / atalho sem argumentos → abre a BANDEJA (comportamento
+    padrão de app de usuário: nada de help-and-exit invisível).
+    """
     parser = build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
+        # Sem subcomando e vindo de duplo-clique/atalho (sem stdin console
+        # interativo): assume 'tray' — o app "abre" como app de bandeja.
+        no_args = not argv
+        no_console = (sys.stdin is None) or (not sys.stdin.isatty())
+        if no_args and no_console:
+            argv = ["tray"]
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
         parser.print_help()
