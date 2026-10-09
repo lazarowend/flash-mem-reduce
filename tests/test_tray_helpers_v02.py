@@ -20,22 +20,27 @@ from flashmem.tray_helpers import (
 
 
 class TestIconCharsMem(unittest.TestCase):
-    """v0.2: o ícone mostra o % de memória física em uso (2 dígitos)."""
+    """v0.2.3: o ícone é em BARRAS — icon_chars_mem retorna o nº de barras acesas."""
 
-    def test_dois_digitos_zero_padded(self):
-        self.assertEqual(icon_chars_mem(5.0), "05")
-        self.assertEqual(icon_chars_mem(95.4), "95")
+    def test_barras_proporcionais(self):
+        # cada barra ≈ 16,7%: 80% -> 5 barras (exemplo do usuário)
+        self.assertEqual(icon_chars_mem(80.0), "5")
+        self.assertEqual(icon_chars_mem(0.0), "0")
+        self.assertEqual(icon_chars_mem(50.0), "3")
+        self.assertEqual(icon_chars_mem(100.0), "6")
 
     def test_arredondamento(self):
-        self.assertEqual(icon_chars_mem(95.5), "96")
-        self.assertEqual(icon_chars_mem(64.49), "64")
+        self.assertEqual(icon_chars_mem(16.0), "1")   # 16/16,7 = 0,96 -> 1
+        self.assertEqual(icon_chars_mem(25.0), "2")   # 25/16,7 = 1,5 -> 2
+        self.assertEqual(icon_chars_mem(91.0), "5")   # 91/16,7 = 5,46 -> 5
+        self.assertEqual(icon_chars_mem(95.0), "6")   # 95/16,7 = 5,7 -> 6
 
-    def test_clamp_100_vira_99(self):
-        self.assertEqual(icon_chars_mem(100.0), "99")
-        self.assertEqual(icon_chars_mem(250.0), "99")
+    def test_clamp_100_e_acima_fica_6_barras(self):
+        self.assertEqual(icon_chars_mem(100.0), "6")
+        self.assertEqual(icon_chars_mem(250.0), "6")
 
     def test_negativo_clampa_zero(self):
-        self.assertEqual(icon_chars_mem(-3.0), "00")
+        self.assertEqual(icon_chars_mem(-3.0), "0")
 
 
 class TestLastCleanPct(unittest.TestCase):

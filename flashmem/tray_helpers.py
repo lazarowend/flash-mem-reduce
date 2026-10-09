@@ -46,15 +46,16 @@ def icon_digit(score: float) -> str:
 
 
 def icon_chars_mem(phys_pct: float) -> str:
-    """v0.2 (pedido do usuário): o ícone mostra o % de memória física em uso.
+    """v0.2.3 (pedido do usuário): ícone em BARRAS estilo bateria.
 
-    Retorna 2 caracteres (fonte 3x5 px, 16x16 comporta 2 dígitos):
-    '95' para 95%. 100% vira '99' (clamp — largura máxima de 2 chars).
-    A COR do ícone continua por pressão (pressure_bucket) — a filosofia
-    do app não muda: só o NÚMERO exibido agora é o % físico.
+    Retorna o NÚMERO DE BARRAS ACESAS como string ('0'..'6'):
+    6 barras = 100% de RAM em uso; cada barra ≈ 16,7%.
+    Ex.: 80% -> round(80/16,7)=5 barras; 95% -> 6 barras.
+    A COR das barras continua por pressão (pressure_bucket) — a
+    filosofia do app não muda: só a REPRESENTAÇÃO visual é em barras.
     """
-    pct = max(0.0, min(99.0, phys_pct))
-    return f"{int(round(pct)):02d}"
+    bars = round(max(0.0, min(100.0, phys_pct)) / (100.0 / 6.0))
+    return str(min(6, max(0, int(bars))))
 
 
 def tooltip_text(commit_pct: float, phys_pct: float, faults_rate: float,

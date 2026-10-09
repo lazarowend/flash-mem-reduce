@@ -51,19 +51,34 @@ class TestTrayModule(unittest.TestCase):
 
     def test_pixels_do_icone(self):
         from flashmem import tray
-        px = tray._make_icon_pixels("verde", "7")
+        # v0.2.3: barras de bateria — '5' = 5 barras acesas
+        px = tray._make_icon_pixels("verde", "5")
         self.assertEqual(len(px), 16)
         self.assertEqual(len(px[0]), 16)
-        # borda na cor do bucket
+        # moldura na cor do bucket
         r, g, b = th.BUCKET_RGB["verde"]
         self.assertEqual(px[0][0], (r, g, b))
-        # glifo '7' tem 7 pixels acesos em branco (3 da barra + 4 do traço)
-        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 7)
+        # 5 barras acesas: 5 topos brancos (LED) + corpo na cor do bucket
+        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 5)
+        r2, g2, b2 = th.BUCKET_RGB["verde"]
+        # corpo das 5 barras acesas (11 linhas — topo é branco) + moldura (60px)
+        self.assertEqual(sum(1 for row in px for p in row if p == (r2, g2, b2)),
+                         5 * 11 + 60)
+
+    def test_pixels_do_icone_off(self):
+        from flashmem import tray
+        # v0.2.3: bucket 'off' (fase do pulso) — NENHUMA barra acesa, sem
+        # branco, moldura escura (o ícone 'respira' escuro, não caixa preta)
+        px = tray._make_icon_pixels("off", "5")
+        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 0)
+        # barras apagadas em cinza-escuro: 6 barras x 12 linhas = 72 px
+        self.assertEqual(sum(1 for row in px for p in row if p == (10, 10, 10)), 72)
 
     def test_glifo_mais_tem_7_pixels(self):
         from flashmem import tray
-        px = tray._make_icon_pixels("vermelho", "+")
-        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 7)
+        # v0.2.3: o '+' virou '6 barras acesas' — 6 topos LED brancos
+        px = tray._make_icon_pixels("vermelho", "6")
+        self.assertEqual(sum(1 for row in px for p in row if p == (255, 255, 255)), 6)
 
     def test_notifyicondata_tamanho_x64(self):
         from flashmem import tray
@@ -115,11 +130,11 @@ class TestSmokeWin32(unittest.TestCase):
             self.assertIsNotNone(app._last_decision)
             self.assertIn(app._last_decision.action,
                           ("clean", "wait", "cooldown", "disarm"))
-            # ícone em cache com chave (bucket, dígito) válida
-            bucket, digit = app._current_key
+            # ícone em cache com chave (bucket, barras) válida
+            bucket, bars = app._current_key
             self.assertIn(bucket, th.BUCKET_RGB)
-            # v0.2: o dígito do ícone é o % de mem física (2 chars, '00'-'99')
-            self.assertRegex(digit, r"^\d{2}$")
+            # v0.2.3: o dígito é o Nº DE BARRAS ACESAS ('0'..'6')
+            self.assertRegex(bars, r"^[0-6]$")
             self.assertIn(app._current_key, app._icon_cache)
         finally:
             app._teardown()

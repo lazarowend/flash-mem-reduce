@@ -264,20 +264,41 @@ def _draw_glyph(pixels: list[list[tuple[int, int, int]]], glyph: tuple[str, ...]
 
 
 def _make_icon_pixels(bucket: str, digit: str) -> list[list[tuple[int, int, int]]]:
-    """16x16 RGB: fundo escuro + borda da cor do bucket + dígito central."""
-    rgb = th.BUCKET_RGB.get(bucket, th.BUCKET_RGB["verde"])
+    """16x16 RGB: BARRAS DE BATERIA (v0.2.3 — pedido do usuário).
+
+    6 barras verticais estilo bateria, acendendo conforme o % de RAM:
+      6 barras cheias = 100%; cada barra ~16,7%.
+      Ex.: 80% -> 5 barras acesas (arredondamento).
+    - Barra ACESA: cor do bucket (pressão) com topo branco (estilo LED).
+    - Barra APAGADA: cinza-escuro (25,25,25) — "não chegou ainda".
+    - `digit` agora é a CONTAGEM de barras acesas ('0'..'6'), calculada
+      por th.icon_chars_mem (que retorna o nº de barras desde v0.2.3).
+    - bucket especial 'off' (fase transparente do pulso): TODAS as barras
+      apagadas + moldura apagada — o ícone 'respira' escuro em vez de
+      virar uma caixa preta riscada (bug da máscara alpha no Win10).
+    """
+    off = bucket == "off"
+    rgb = (16, 16, 16) if off else th.BUCKET_RGB.get(bucket, th.BUCKET_RGB["verde"])
+    frame = (16, 16, 16) if off else rgb
+    bar_off = (10, 10, 10) if off else (25, 25, 25)
     px = [[(16, 16, 16)] * 16 for _ in range(16)]
+    # moldura (1px) na cor do estado
     for i in range(16):
-        px[0][i] = rgb; px[15][i] = rgb; px[i][0] = rgb; px[i][15] = rgb
-    glyph = _DIGIT_GLYPHS.get(digit)
-    if glyph:
-        # centraliza 3x5 no 16x16: x0=6 (margem 6/7), y0=5 (margem 5/6)
-        _draw_glyph(px, glyph, (255, 255, 255), 6, 5)
-    else:
-        # sem glifo: preenche o miolo com a cor do bucket (fallback honesto)
-        for y in range(4, 12):
-            for x in range(4, 12):
-                px[y][x] = rgb
+        px[0][i] = frame; px[15][i] = frame; px[i][0] = frame; px[i][15] = frame
+    # 6 barras verticais: largura 2, gap 0? layout: x = 1,3,5,7,9,11 (2px cada)
+    # área interna y=2..13 (12 px de altura) — barras sobem do fundo p/ topo
+    try:
+        lit = 0 if off else max(0, min(6, int(digit)))
+    except ValueError:
+        lit = 0 if off else 6
+    # 6 barras de 1px, gap 1px: x = 2,4,6,8,10,12 (centradas no 16px)
+    for bar in range(6):
+        x = 2 + bar * 2  # x = 2,4,6,8,10,12
+        is_lit = (not off) and (bar < lit)
+        color = rgb if is_lit else bar_off
+        top = (255, 255, 255) if is_lit else color  # topo LED branco
+        for y in range(2, 14):
+            px[y][x] = top if y == 2 else color
     return px
 
 
@@ -569,7 +590,11 @@ class TrayApp:
         if visible_now:
             hicon = self._ensure_icon(bucket, digit)
         else:
-            hicon = self._ensure_transparent_icon()
+            # v0.2.3: fase 'off' do pulso = ícone com TODAS as barras
+            # apagadas (escuro). O HICON transparente virava 'caixa preta
+            # riscada' no Explorer do Win10 (alpha em 16px é mal suportado);
+            # o ícone escuro dá o mesmo efeito de respirar, sem artefato.
+            hicon = self._ensure_icon("off", digit)
         # Só envia NIM_MODIFY quando a FASE VISUAL muda (on<->off) ou quando o
         # estado (bucket/digit) mudou — evita IPC com o Explorer a cada 250ms.
         visual_key = (key, visible_now)
